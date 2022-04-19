@@ -4,7 +4,7 @@ A very basic implementation of AlphaZero style learning with the MCTX framework 
 ## Usage
 Using this repo requires JAX, Haiku, NumPy and wandb. You can start an experiment with 
 ```bash
-python3 basic_tree_search.py.py -c config.json -o basic_tree_search -s 0
+python3 basic_tree_search.py -c config.json -o basic_tree_search -s 0
 ```
 The flags have the following meaning:
 
