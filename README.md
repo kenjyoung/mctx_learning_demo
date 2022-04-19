@@ -1,10 +1,10 @@
 # Basic Learning Demo with MCTX
-A very basic implementation of AlphaZero style learning with the MCTX framework for Monte Carlo Tree Search in JAX. The included naive_tree_search.py script assumes the agent have access to the exact environment dynamics and does not include any model learning, but rather learns a policy and value function from tree search results as in AlphaZero.
+A very basic implementation of AlphaZero style learning with the MCTX framework for Monte Carlo Tree Search in JAX. The included basic_tree_search.py script assumes the agent have access to the exact environment dynamics and does not include any model learning, but rather learns a policy and value function from tree search results as in AlphaZero.
 
 ## Usage
 Using this repo requires JAX, Haiku, NumPy and wandb. You can start an experiment with 
 ```bash
-python3 basic_tree_search.py.py -c config.json -o naive_tree_search -s 0
+python3 basic_tree_search.py.py -c config.json -o basic_tree_search -s 0
 ```
 The flags have the following meaning:
 
