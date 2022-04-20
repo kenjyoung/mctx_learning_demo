@@ -42,7 +42,7 @@ activation_dict = {"relu": jx.nn.relu, "silu": jx.nn.silu, "elu": jx.nn.elu}
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", "-s", type=int, default=0)
-parser.add_argument("--output", "-o", type=str, default="alpha_zero")
+parser.add_argument("--output", "-o", type=str, default="basic_tree_search")
 parser.add_argument("--config", "-c", type=str)
 args = parser.parse_args()
 key = jx.random.PRNGKey(args.seed)
@@ -50,7 +50,7 @@ key = jx.random.PRNGKey(args.seed)
 with open(args.config, 'r') as f:
     config = dotdict(json.load(f))
 
-config.update({"agent_type":"alpha_zero", "seed":args.seed})
+config.update({"agent_type":"basic_tree_search", "seed":args.seed})
 
 Environment = getattr(jax_environments, config.environment)
 
@@ -100,7 +100,7 @@ def get_recurrent_fn(env, V_func, pi_func):
         pi_logit = batch_pi_func(pi_params, obs.astype(float))
         recurrent_fn_output = mctx.RecurrentFnOutput(
         reward=rewards,
-        discount=1.0-terminals,
+        discount=(1.0-terminals)*config.discount,
         prior_logits=pi_logit,
         value=V)
         return recurrent_fn_output, env_states
@@ -180,13 +180,18 @@ def get_agent_environment_interaction_loop_function(env, V_func, pi_func, recurr
               max_num_considered_actions=num_actions,
               qtransform=functools.partial(
                   mctx.qtransform_completed_by_mix_value,
-                  use_mixed_value=False
+                  use_mixed_value=config.use_mixed_value
               ),
             )
 
             # tree search derived targets for policy and value function
             search_policy = policy_output.action_weights
-            search_value = policy_output.search_tree.node_values[:, policy_output.search_tree.ROOT_INDEX]
+            if(config.value_target=='maxq'):
+                search_value = policy_output.search_tree.qvalues(policy_output.action)
+            elif(config.value_target=='nodev'):
+                search_value = policy_output.search_tree.node_values[:, policy_output.search_tree.ROOT_INDEX]
+            else:
+                raise ValueError("Unknown value target.")
 
             # compute loss gradient compared to tree search targets and update parameters
             pi_grads, V_grads = loss_grad(get_pi_params(S["pi_opt_state"]), get_V_params(S["V_opt_state"]), search_policy, search_value, obs)
@@ -243,7 +248,7 @@ run_state = {name:var_dict[name] for name in run_state_names}
 avg_returns = []
 times = []
 for i in tqdm(range(config.num_steps//config.eval_frequency)):
-    # perform a number of iterations of agent environment interation including learning updates
+    # perform a number of iterations of agent environment interaction including learning updates
     run_state = agent_environment_interaction_loop_function(run_state)
 
     # avg_return is debiased, and only includes batch elements wit at least one completed episode so that it is more meaningful in early episodes

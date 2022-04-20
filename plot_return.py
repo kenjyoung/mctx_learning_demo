@@ -9,7 +9,7 @@ timescale = 1000
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--output", "-o", type=str, default="dreamer.out")
+parser.add_argument("--output", "-o", type=str, default="basic_tree_search.out")
 parser.add_argument("--window", "-w", type=int, default=1)
 args = parser.parse_args()
 
