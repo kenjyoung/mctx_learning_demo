@@ -19,11 +19,9 @@ from tqdm import tqdm
 import pickle as pkl
 
 
-############################################################
-# This file implements a naive tree search using the mctx
-# codebase. I believe here stochasticity is handled using
-# m=1 samples for chance nodes, which is probably not ideal.
-############################################################
+####################################################################
+# This file implements a simple tree search using the mctx codebase.
+####################################################################
 
 #Copied from: https://stackoverflow.com/a/23689767
 class dotdict(dict):
@@ -87,7 +85,7 @@ class pi_function(hk.Module):
 
 # this assumes the agent has access to the exact environment dynamics
 def get_recurrent_fn(env, V_func, pi_func):
-    batch_step = vmap(env.step, in_axes=(0,0,0))
+    batch_step = vmap(env.step, in_axes=(0,0))
     batch_pi_func = vmap(pi_func,in_axes=(None,0))
     batch_V_func = vmap(V_func,in_axes=(None,0))
     def recurrent_fn(params, key, actions, env_states):
@@ -95,7 +93,7 @@ def get_recurrent_fn(env, V_func, pi_func):
         pi_params = params["pi"]
         key, subkey = jx.random.split(key)
         subkeys = jx.random.split(subkey, num=config.batch_size)
-        env_states, obs, rewards, terminals, _ = batch_step(subkeys, actions, env_states)
+        env_states, obs, rewards, terminals, _ = batch_step(actions, env_states)
         V = batch_V_func(V_params, obs.astype(float))
         pi_logit = batch_pi_func(pi_params, obs.astype(float))
         recurrent_fn_output = mctx.RecurrentFnOutput(
@@ -152,7 +150,7 @@ def get_AC_loss(pi_func, V_func):
 def get_agent_environment_interaction_loop_function(env, V_func, pi_func, recurrent_fn, V_opt_update, pi_opt_update, get_V_params, get_pi_params, num_actions, iterations):
     batch_loss = lambda *x: jnp.mean(vmap(get_AC_loss(pi_func, V_func), in_axes=(None,None,0,0,0))(*x))
     loss_grad = grad(batch_loss, argnums=(0,1))
-    batch_step = vmap(env.step, in_axes=(0,0,0))
+    batch_step = vmap(env.step, in_axes=(0,0))
     batch_obs = vmap(env.get_observation)
     batch_reset = vmap(env.reset)
     batch_V_func = vmap(V_func,in_axes=(None,0))
@@ -203,7 +201,7 @@ def get_agent_environment_interaction_loop_function(env, V_func, pi_func, recurr
 
             S["key"], subkey = jx.random.split(S["key"])
             subkeys = jx.random.split(subkey, num=config.batch_size)
-            S["env_states"], obs, reward, terminal, _ = batch_step(subkeys, actions, S["env_states"])
+            S["env_states"], obs, reward, terminal, _ = batch_step(actions, S["env_states"])
 
             # reset environment if terminated
             S["key"], subkey = jx.random.split(S["key"])

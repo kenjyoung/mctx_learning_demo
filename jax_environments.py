@@ -23,8 +23,7 @@ class Asterix:
         }
 
     @partial(jit, static_argnums=(0,))
-    def step(self, key, action, env_state):
-        # print(env_state)
+    def step(self, action, env_state):
         pos, is_enemy, is_gold, movement_dir, entity_x, key = env_state
         reward = 0
         terminal = False

@@ -13,5 +13,5 @@ The flags have the following meaning:
 -s specifies the random seed.<br>
 
 ## Preliminary Results
-The following plots display running average return as a function of training steps on a simple Asterix like game which is implemented in jax in the file jax_environments.py. Note that this environment is stochastic, but the script basic_tree_search.py uses MCTS without chance nodes (effectively sampling only one possible outcome per chance node per search), which is not very principled. It should be straightforward to apply to other environments written in jax with a similar interface.
+The following plots display running average return as a function of training steps on a simple Asterix like game which is implemented in jax in the file jax_environments.py. Note that this environment is stochastic, and the planner has access to the random key as part of the environment state which is not very realistic, but serves as a proof of concept. It should be straightforward to apply to other environments written in jax with a similar interface.
 <img align="center" src="img/learning_curve.png" width=800>
