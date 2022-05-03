@@ -30,12 +30,6 @@ class dotdict(dict):
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
 
-key = jx.random.PRNGKey(0)
-
-Environment = getattr(jax_environments, "Asterix")
-
-env = Environment()
-
 activation_dict = {"relu": jx.nn.relu, "silu": jx.nn.silu, "elu": jx.nn.elu}
 
 parser = argparse.ArgumentParser()
@@ -122,6 +116,8 @@ def get_init_fn(env):
         V_params = V_net.init(subkey, dummy_obs)
         V_func = V_net.apply
 
+        V_target_params = V_params
+
         pi_net = hk.without_apply_rng(hk.transform(lambda obs: pi_function(config, num_actions)(obs.astype(float))))
         key, subkey = jx.random.split(key)
         pi_params = pi_net.init(subkey, dummy_obs)
@@ -133,7 +129,7 @@ def get_init_fn(env):
         pi_opt_init, pi_opt_update, get_pi_params = adamw(config.pi_alpha, eps=config.eps_adam, b1=config.b1_adam, b2=config.b2_adam, wd=config.wd_adam)
         pi_opt_state = pi_opt_init(pi_params)
 
-        return env_states, V_func, pi_func, V_opt_state, pi_opt_state, V_opt_update, pi_opt_update, get_V_params, get_pi_params
+        return env_states, V_func, pi_func, V_opt_state, pi_opt_state, V_opt_update, pi_opt_update, get_V_params, V_target_params, get_pi_params
     return init_fn
 
 def get_AC_loss(pi_func, V_func):
@@ -160,7 +156,7 @@ def get_agent_environment_interaction_loop_function(env, V_func, pi_func, recurr
         def loop_function(S, data):
             obs = batch_obs(S["env_states"])
             pi_logits = batch_pi_func(get_pi_params(S["pi_opt_state"]), obs.astype(float))
-            V = batch_V_func(get_V_params(S["V_opt_state"]), obs.astype(float))
+            V = batch_V_func(S["V_target_params"], obs.astype(float))
 
             root = mctx.RootFnOutput(
               prior_logits=pi_logits,
@@ -170,7 +166,7 @@ def get_agent_environment_interaction_loop_function(env, V_func, pi_func, recurr
 
             S["key"], subkey = jx.random.split(S["key"])
             policy_output = mctx.gumbel_muzero_policy(
-              params={"V":get_V_params(S["V_opt_state"]), "pi":get_pi_params(S["pi_opt_state"])},
+              params={"V":S["V_target_params"], "pi":get_pi_params(S["pi_opt_state"])},
               rng_key=subkey,
               root=root,
               recurrent_fn=recurrent_fn,
@@ -178,14 +174,15 @@ def get_agent_environment_interaction_loop_function(env, V_func, pi_func, recurr
               max_num_considered_actions=num_actions,
               qtransform=functools.partial(
                   mctx.qtransform_completed_by_mix_value,
-                  use_mixed_value=config.use_mixed_value
+                  use_mixed_value=config.use_mixed_value,
+                  value_scale=config.value_scale
               ),
             )
 
             # tree search derived targets for policy and value function
             search_policy = policy_output.action_weights
             if(config.value_target=='maxq'):
-                search_value = policy_output.search_tree.qvalues(policy_output.action)
+                search_value = policy_output.search_tree.qvalues(jnp.full(config.batch_size, policy_output.search_tree.ROOT_INDEX))[jnp.arange(config.batch_size), policy_output.action]
             elif(config.value_target=='nodev'):
                 search_value = policy_output.search_tree.node_values[:, policy_output.search_tree.ROOT_INDEX]
             else:
@@ -195,12 +192,15 @@ def get_agent_environment_interaction_loop_function(env, V_func, pi_func, recurr
             pi_grads, V_grads = loss_grad(get_pi_params(S["pi_opt_state"]), get_V_params(S["V_opt_state"]), search_policy, search_value, obs)
             S["pi_opt_state"] = pi_opt_update(S["opt_t"], pi_grads, S["pi_opt_state"])
             S["V_opt_state"] = V_opt_update(S["opt_t"], V_grads, S["V_opt_state"])
+            S["opt_t"]+=1
+
+            # Update target params after a particular number of parameter updates
+            S["V_target_params"] = jx.tree_multimap(lambda x,y: jnp.where(S["opt_t"]%config.target_update_frequency==0,x,y),get_V_params(S["V_opt_state"]), S["V_target_params"])
 
             # always take action recommended by tree search
             actions = policy_output.action
 
-            S["key"], subkey = jx.random.split(S["key"])
-            subkeys = jx.random.split(subkey, num=config.batch_size)
+            # step the environment
             S["env_states"], obs, reward, terminal, _ = batch_step(actions, S["env_states"])
 
             # reset environment if terminated
@@ -232,14 +232,14 @@ env = Environment(**env_config)
 num_actions = env.num_actions()
 
 key, subkey = jx.random.split(key)
-env_states, V_func, pi_func, V_opt_state, pi_opt_state, V_opt_update, pi_opt_update, get_V_params, get_pi_params = get_init_fn(env)(subkey)
+env_states, V_func, pi_func, V_opt_state, pi_opt_state, V_opt_update, pi_opt_update, get_V_params, V_target_params, get_pi_params = get_init_fn(env)(subkey)
 
 recurrent_fn = get_recurrent_fn(env, V_func, pi_func)
 
 agent_environment_interaction_loop_function = jit(get_agent_environment_interaction_loop_function(env, V_func, pi_func, recurrent_fn, V_opt_update, pi_opt_update, get_V_params, get_pi_params, num_actions, config.eval_frequency))
 
 # run_state contains all information to be maintained and updated in agent_environment_interaction_loop
-run_state_names = ["env_states", "V_opt_state", "pi_opt_state", "opt_t", "avg_return", "episode_return", "num_episodes", "key"]
+run_state_names = ["env_states", "V_opt_state", "V_target_params", "pi_opt_state", "opt_t", "avg_return", "episode_return", "num_episodes", "key"]
 var_dict = locals()
 run_state = {name:var_dict[name] for name in run_state_names}
 
