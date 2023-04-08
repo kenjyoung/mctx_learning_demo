@@ -195,7 +195,7 @@ def get_agent_environment_interaction_loop_function(env, V_func, pi_func, recurr
             S["opt_t"]+=1
 
             # Update target params after a particular number of parameter updates
-            S["V_target_params"] = jx.tree_multimap(lambda x,y: jnp.where(S["opt_t"]%config.target_update_frequency==0,x,y),get_V_params(S["V_opt_state"]), S["V_target_params"])
+            S["V_target_params"] = jx.tree_util.tree_map(lambda x,y: jnp.where(S["opt_t"]%config.target_update_frequency==0,x,y),get_V_params(S["V_opt_state"]), S["V_target_params"])
 
             # always take action recommended by tree search
             actions = policy_output.action
@@ -206,7 +206,7 @@ def get_agent_environment_interaction_loop_function(env, V_func, pi_func, recurr
             # reset environment if terminated
             S["key"], subkey = jx.random.split(S["key"])
             subkeys = jx.random.split(subkey, num=config.batch_size)
-            S["env_states"] = jx.tree_multimap(lambda x,y: jnp.where(jnp.reshape(terminal,[terminal.shape[0]]+[1]*(len(x.shape)-1)), x,y), batch_reset(subkeys), S["env_states"])
+            S["env_states"] = jx.tree_util.tree_map(lambda x,y: jnp.where(jnp.reshape(terminal,[terminal.shape[0]]+[1]*(len(x.shape)-1)), x,y), batch_reset(subkeys), S["env_states"])
 
             # update statistics for computing average return
             S["episode_return"] += reward
